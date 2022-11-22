@@ -1,0 +1,125 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql-standalone
+spec:
+  serviceName: mysql-standalone
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql-standalone
+  template:
+    metadata:
+      labels:
+        app: mysql-standalone
+    spec:
+      containers:
+        - name: mysql-standalone
+          image: harbor.codemowers.eu/docker.io/library/mysql:8.0.31
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-standalone-secrets
+                  key: rootPassword
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+  volumeClaimTemplates:
+  - metadata:
+      name: mysql-data
+    spec:
+      storageClassName: openebs-hostpath
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-standalone
+  labels:
+    app: mysql-standalone
+spec:
+  selector:
+    app: mysql-standalone
+  ports:
+  - protocol: TCP
+    port: 3306
+    targetPort: 3306
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: phpmyadmin
+  labels:
+    app: phpmyadmin
+spec:
+  # phpMyAdmin session handling is not really compatible with more replicas
+  replicas: 1
+  selector:
+    matchLabels:
+      app: phpmyadmin
+  template:
+    metadata:
+      labels:
+        app: phpmyadmin
+    spec:
+      containers:
+        - name: phpmyadmin
+          image: harbor.codemowers.eu/docker.io/phpmyadmin/phpmyadmin:5.2.0
+          ports:
+            - name: web
+              containerPort: 80
+              protocol: TCP
+          env:
+            - name: PMA_HOSTS
+              value: mysql-standalone
+            - name: PMA_PORTS
+              value: "3306"
+            - name: PMA_ABSOLUTE_URI
+              value: https://phpmyadmin-3nk45yqd6e.codemowers.ee/
+            - name: UPLOAD_LIMIT
+              value: 10G
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: phpmyadmin
+  annotations:
+    kubernetes.io/ingress.class: shared
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    external-dns.alpha.kubernetes.io/target: traefik.codemowers.ee
+spec:
+  rules:
+  - host: phpmyadmin-3nk45yqd6e.codemowers.ee
+    http:
+      paths:
+      - pathType: Prefix
+        path: "/"
+        backend:
+          service:
+            name: phpmyadmin
+            port:
+              number: 80
+  tls:
+  - hosts:
+    - "*.codemowers.ee"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: phpmyadmin
+  labels:
+    app: phpmyadmin
+spec:
+  selector:
+    app: phpmyadmin
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 80
