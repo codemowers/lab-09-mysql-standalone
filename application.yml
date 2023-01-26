@@ -5,7 +5,7 @@ metadata:
   name: mysql-standalone
 spec:
   serviceName: mysql-standalone
-  replicas: 1
+  replicas: 1 # Increasing this will NOT of course make MySQL HA!
   selector:
     matchLabels:
       app: mysql-standalone
@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: mysql-standalone
-          image: harbor.codemowers.eu/docker.io/library/mysql:8.0.31
+          image: mysql:8.0.32
           env:
             - name: MYSQL_ROOT_PASSWORD
               valueFrom:
@@ -27,15 +27,15 @@ spec:
             - name: mysql-data
               mountPath: /var/lib/mysql
   volumeClaimTemplates:
-  - metadata:
-      name: mysql-data
-    spec:
-      storageClassName: openebs-hostpath
-      accessModes:
-        - ReadWriteOnce
-      resources:
-        requests:
-          storage: 100Mi
+    - metadata:
+        name: mysql-data
+      spec:
+        storageClassName: longhorn
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 500Mi
 ---
 apiVersion: v1
 kind: Service
@@ -47,9 +47,9 @@ spec:
   selector:
     app: mysql-standalone
   ports:
-  - protocol: TCP
-    port: 3306
-    targetPort: 3306
+    - protocol: TCP
+      port: 3306
+      targetPort: 3306
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -70,7 +70,7 @@ spec:
     spec:
       containers:
         - name: phpmyadmin
-          image: harbor.codemowers.eu/docker.io/phpmyadmin/phpmyadmin:5.2.0
+          image: phpmyadmin:5.2.0
           ports:
             - name: web
               containerPort: 80
@@ -81,7 +81,7 @@ spec:
             - name: PMA_PORTS
               value: "3306"
             - name: PMA_ABSOLUTE_URI
-              value: https://phpmyadmin-3nk45yqd6e.codemowers.ee/
+              value: https://phpmyadmin-laurivosandi.codemowers.ee/
             - name: UPLOAD_LIMIT
               value: 10G
 ---
@@ -96,19 +96,19 @@ metadata:
     external-dns.alpha.kubernetes.io/target: traefik.codemowers.ee
 spec:
   rules:
-  - host: phpmyadmin-3nk45yqd6e.codemowers.ee
-    http:
-      paths:
-      - pathType: Prefix
-        path: "/"
-        backend:
-          service:
-            name: phpmyadmin
-            port:
-              number: 80
+    - host: phpmyadmin-laurivosandi.codemowers.ee
+      http:
+        paths:
+          - pathType: Prefix
+            path: "/"
+            backend:
+              service:
+                name: phpmyadmin
+                port:
+                  number: 80
   tls:
-  - hosts:
-    - "*.codemowers.ee"
+    - hosts:
+        - "*.codemowers.ee"
 ---
 apiVersion: v1
 kind: Service
@@ -120,6 +120,33 @@ spec:
   selector:
     app: phpmyadmin
   ports:
-  - protocol: TCP
-    port: 80
-    targetPort: 80
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mysql-import-employees
+spec:
+  template:
+    spec:
+      containers:
+        - name: mysql-import
+          image: mysql:8.0.32
+          env:
+            - name: URL
+              value: https://raw.githubusercontent.com/datacharmer/test_db/master/employees.sql
+            - name: MYSQL_HOST
+              value: mysql-standalone
+            - name: MYSQL_PWD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-standalone-secrets
+                  key: rootPassword
+          command:
+            - /bin/bash
+            - -c
+            - "curl ${URL} | mysql"
+      restartPolicy: Never
+  backoffLimit: 3
