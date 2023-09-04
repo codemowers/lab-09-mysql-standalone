@@ -16,7 +16,8 @@ spec:
     spec:
       containers:
         - name: mysql-standalone
-          image: mysql:8.0.32
+          image: mysql@sha256:53ca64a889514c294b85d003de4de35098734a025c776d659fc75ae23a63f5c4
+          imagePullPolicy: IfNotPresent
           env:
             - name: MYSQL_ROOT_PASSWORD
               valueFrom:
@@ -70,7 +71,8 @@ spec:
     spec:
       containers:
         - name: phpmyadmin
-          image: phpmyadmin:5.2.0
+          image: phpmyadmin@sha256:caf285a9d9ba1b9b1daa6ec63a0290a1ef743d7d32300d15a56c487dcd418353
+          imagePullPolicy: IfNotPresent
           ports:
             - name: web
               containerPort: 80
